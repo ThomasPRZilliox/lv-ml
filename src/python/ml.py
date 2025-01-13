@@ -5,36 +5,61 @@ from torchvision import transforms
 from PIL import Image
 import os
 
+
 class TinyModel(nn.Module):
-  def __init__(self):
-    super().__init__()
-    self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
-    self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-    self.pool = nn.MaxPool2d(2, 2)
-    self.fc1 = nn.Linear(32 * 56 * 56, 64)
-    self.fc2 = nn.Linear(64, 1)
-    self.relu = nn.ReLU()
-    self.sigmoid = nn.Sigmoid()
+    def __init__(self):
+        super().__init__()
+        self.relu = nn.ReLU()
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
+        self.conv3 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.conv4 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+        self.pool = nn.MaxPool2d(2, 2)
 
-  def forward(self,x):
-    x = self.pool(self.relu(self.conv1(x)))
-    x = self.pool(self.relu(self.conv2(x)))
-    x = x.view(-1, 32 * 56 * 56)
-    x = self.relu(self.fc1(x))
-    x = self.sigmoid(self.fc2(x))
-    return x
+        # Calculate the size of the fully connected layer
+        input_shape = (3, 224, 224)
 
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, *input_shape)
+            x = self.pool(self.relu(self.conv1(dummy_input)))
+            x = self.pool(self.relu(self.conv2(x)))
+            x = self.pool(self.relu(self.conv3(x)))
+            x = self.pool(self.relu(self.conv4(x)))
+            self.flatten_size = x.numel()
+
+        self.fc1 = nn.Linear(self.flatten_size, 64)
+
+        # self.fc1 = nn.Linear(128 * 56 * 56, 64)
+        self.fc2 = nn.Linear(64, 1)
+
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = self.pool(self.relu(self.conv1(x)))
+        x = self.pool(self.relu(self.conv2(x)))
+        x = self.pool(self.relu(self.conv3(x)))
+        x = self.pool(self.relu(self.conv4(x)))
+        # print(f"After conv: {x.shape}")
+        # Dynamically compute the number of features for the fully connected layer
+        x = x.view(x.size(0), -1)
+        # print(f"After transpose: {x.shape}")
+        x = self.relu(self.fc1(x))
+        # print(f"After ReLu: {x.shape}")
+        x = self.sigmoid(self.fc2(x))
+        # print(f"After sigmoid: {x.shape}")
+        return x
 # Get the directory of the current script
 script_dir = os.path.dirname(os.path.abspath(__file__))
-src_dir =  os.path.dirname(script_dir)
-model_path = os.path.join(src_dir,"model_full.pt")
-image_path = os.path.join(src_dir,"image1.jpeg")
-print(model_path)
+src_dir = os.path.dirname(script_dir)
+model_path = os.path.join(src_dir,"model_state_dict.pt")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")  # Use GPU if available
 
-model = torch.load(model_path, map_location=device)
-model.eval()  # Set the model to evaluation mode
+model = TinyModel()
+model.load_state_dict(torch.load(model_path, weights_only=True, map_location=device))
+model.eval()
+# model = torch.load(model_path, map_location=device)
+# model.eval()  # Set the model to evaluation mode
 
    
 
@@ -68,11 +93,10 @@ def predict(image_path):
     return predicted_class
 
 if __name__ == "__main__":
-    pass
-    # Configurations
-    image_path = os.path.join(src_dir,"image1.jpeg")
-    input_size = (224, 224)   # Input size expected by the model
-    # Predict
-    outputs = predict(image_path)
-    print(outputs)
+    print("Testing model:")
+    for animal in ["cat","dog"]:
+        image_path = os.path.join(src_dir,f"{animal}.jpg")
+        outputs = predict(image_path)
+        print(f"Expecting {animal} as output, got: {outputs}")
+
     
